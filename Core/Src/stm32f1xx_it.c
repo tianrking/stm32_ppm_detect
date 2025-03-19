@@ -29,27 +29,31 @@
 #include "ppm.h"
 #include "math.h"
 #include "stdio.h"
+
 extern TIM_HandleTypeDef htim4;
-uint16_t    PPM_Cnt=0;
-uint32_t    PPM_Time=0;
-uint16_t    PPM_Okay=0;
-uint16_t    PPM_Databuf[8]={0};
 
-#define CHANNEL_MIN_THRESHOLD  490 //500   // ͨ���������С��ֵ����λΪ΢��
-#define CHANNEL_MAX_THRESHOLD  1010 //1510 //1500  // ͨ������������ֵ����λΪ΢��  ?
-#define SYNC_PULSE_MIN_THRESHOLD  2500  // Sync�������С��ֵ����λΪ΢��
-#define PPM_CHANNELS  8  // PPMͨ������
+uint16_t    PPM_Cnt=0;         // Counter for PPM channels
+uint32_t    PPM_Time=0;        // Timer value for pulse width measurement
+uint16_t    PPM_Okay=0;        // Flag for valid PPM frame detection
+uint16_t    PPM_Databuf[8]={0}; // Buffer to store channel values
 
-volatile uint32_t last_capture = 0;    // �ϴβ���ļ�����ֵ
-volatile int channel_values[PPM_CHANNELS]; // ÿ��ͨ����ֵ
-volatile int channel_index = 0;        // ��ǰͨ������
-volatile int sync_detected = 0;        // ͬ���������־
+// Channel signal thresholds in microseconds
+#define CHANNEL_MIN_THRESHOLD  490     // Minimum channel signal value 
+#define CHANNEL_MAX_THRESHOLD  1010    // Maximum channel signal value
+#define SYNC_PULSE_MIN_THRESHOLD  2500 // Minimum sync pulse width
+#define PPM_CHANNELS  8               // Number of PPM channels
 
-#define CHANNEL_MIN_PULSE_WIDTH  500   // ��С�����ȣ�0.5ms��
-#define CHANNEL_MAX_PULSE_WIDTH  1500  // ��������ȣ�1.5ms��
-#define FILTER_ALPHA  0.1              // �˲���������ϵ����0��1֮�䣩
+volatile uint32_t last_capture = 0;    // Previous capture timer value
+volatile int channel_values[PPM_CHANNELS]; // Array to store each channel value
+volatile int channel_index = 0;        // Current channel index
+volatile int sync_detected = 0;        // Sync pulse detection flag
 
-extern volatile int filtered_channel_values[PPM_CHANNELS]; // �˲����ͨ��ֵ
+// Channel pulse width definitions
+#define CHANNEL_MIN_PULSE_WIDTH  500   // Minimum pulse width (0.5ms)
+#define CHANNEL_MAX_PULSE_WIDTH  1500  // Maximum pulse width (1.5ms)
+#define FILTER_ALPHA  0.1              // Filter coefficient (between 0 and 1)
+
+extern volatile int filtered_channel_values[PPM_CHANNELS]; // Filtered channel values
 /* USER CODE END TD */
 
 /* Private define ------------------------------------------------------------*/
@@ -227,29 +231,31 @@ void SysTick_Handler(void)
 void EXTI15_10_IRQHandler(void)
 {
   /* USER CODE BEGIN EXTI15_10_IRQn 0 */
-	   PPM_Time = TIM4->CNT;
-    TIM4->CNT = 0; // 复位计数器
-		//1500 9000
-    if (PPM_Time >= 3000){ // && (PPM_Time <= 9000)) { // 判断起始信号
-        PPM_Okay = 1;
-        PPM_Cnt = 0;
-    } 
-    else if (PPM_Okay == 1) {	
-        if(abs(PPM_Databuf[PPM_Cnt]-PPM_Time)>10){
-            PPM_Databuf[PPM_Cnt] = PPM_Time; // 存储数据
-		}	
-        PPM_Cnt++;
-        if (PPM_Cnt >= 8) {
-            PPM_Okay = 0;
-            PPM_Cnt = 0;
-					           // ProcessPPMData(PPM_Databuf); // 处理一帧完整的数据
-						process_channel_values();
-        }
-    }
+  PPM_Time = TIM4->CNT;
+  TIM4->CNT = 0; // Reset the counter
+  
+  // Check if this is a sync pulse (pulse width between 3000-9000)
+  if (PPM_Time >= 3000) { // Detect start signal
+      PPM_Okay = 1;
+      PPM_Cnt = 0;
+  } 
+  else if (PPM_Okay == 1) {
+      // Only update value if change is significant (>10)
+      if(abs(PPM_Databuf[PPM_Cnt]-PPM_Time) > 10) {
+          PPM_Databuf[PPM_Cnt] = PPM_Time; // Store channel data
+      }
+      
+      PPM_Cnt++;
+      if (PPM_Cnt >= 8) { // If all channels are received
+          PPM_Okay = 0;
+          PPM_Cnt = 0;
+          // Process the complete frame of PPM data
+          process_channel_values();
+      }
+  }
   /* USER CODE END EXTI15_10_IRQn 0 */
   HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_12);
   /* USER CODE BEGIN EXTI15_10_IRQn 1 */
-
   /* USER CODE END EXTI15_10_IRQn 1 */
 }
 
